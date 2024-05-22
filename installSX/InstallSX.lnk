@@ -1,0 +1,4 @@
+FROM LIB:c.o "InstallSX.o"
+TO "InstallSX"
+LIB LIB:sc.lib LIB:amiga.lib
+
