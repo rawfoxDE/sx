@@ -1,0 +1,4 @@
+FROM LIB:c.o "MUI-LVtest.o"
+TO "MUI-LVtest"
+LIB LIB:sc.lib LIB:amiga.lib
+
