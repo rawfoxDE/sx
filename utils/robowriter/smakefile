@@ -1,0 +1,13 @@
+.c.o:
+		SC $(CFLAGS) $(CPU) $*.c
+
+CFLAGS		= NMINC MCCONS STREQ STRMERGE NOSTKCHK DEFINE=__PROTO__
+LFLAGS		= SC SD NOICONS STRIPDEBUG
+
+CPU		= CPU=000
+
+OBJS		= RoboWriter.o
+LIBS		= LIB:sc.lib LIB:amiga.lib
+
+RoboWriter:	$(OBJS)
+		SLINK LIB:c.o $(OBJS) TO $@ LIB $(LIBS) $(LFLAGS)
