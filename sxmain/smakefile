@@ -1,0 +1,12 @@
+.c.o:
+	SC $(CFLAGS) $(CPU) $*.c
+
+CFLAGS	= NMINC MCCONS STREQ STRMER NOSTKCHK DEF=__PROTO__ PARM=R OPT
+LFLAGS	= SD SC NOICONS STRIPDEBUG
+
+CPU   = CPU=020
+OBJS	= sx.o bixfer.o chat&page.o configs.o dismode.o door_xim.o door_para.o door_dd.o door_fame.o download.o flags.o instsend.o menu.o msgs.o newuser.o ports.o prim.o screen.o showansi.o sxfifo.o useredit.o upload.o ver.o who.o xfer.o
+LIBS	= LIB:sc.lib
+
+SX:	$(OBJS)
+	SLINK LIB:c.o $(OBJS) TO amix:sx/SX LIB $(LIBS) $(LFLAGS)

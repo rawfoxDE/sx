@@ -1,0 +1,1637 @@
+static const char __version[]="\0$VER: SX 1.06bf [eSSeXX] 68020 "__DATE__"";
+
+//credits[]=login !!!
+//ver[]=credits for `ver`!
+
+char credits[] = "§™’›‘™ŞŠŞÙ‹Ş•ŞÙ‹Ğã£¹ã£½ô¬‰•—Ş«…‹Š™‘Ñ¦ŞÍĞÎÈŞÖ™««™¦¦ÕŞ¼…Ş£Œ¡¸¦ŞÑŞº•—•Š’»ŒŒ‰Š•Ğã£¹ã£½ô¥‰ŞŒ™Ş›™›Š™šŞŠŞ°š™ŞÙ’šŞŠŞÙ’šŞ¼‰šĞã£¹ã£½ô»™›Š•Ş››‰Œ™šŞŠŞÙ‹ŞÙ‹Ğ";
+char ver[] = "ã£Ì´ã£Ì¼ã£ËÍ‘«…‹Š™‘Ñ¦Şã£ËË‘ÍĞÎÈŞÖ™««™¦¦ÕŞã£ËÌ‘»…Œ•—–ŠŞÍÅÅÆÑÌÎÎÎŞ¼…Ş±•›–™’Ş»’‹™Ğã£¹ã£½ôã£ËÌ‘«¦ŞÖ™««™¦¦ÕŞœ‹™šŞŞŠ–™Ş«‰Œ›™‹Ş˜Ş«…‹Š™‘Ñ¦ŞÍĞÎÉŞ¼…Ş®™Š™ŒŞ¤™’™„…Ğã£¹ã£½ô«‰ŒŠŞŞã£Í‘–ŠŠÄÏÏ‡‡‡Ğ’‰™œ™›“Ğ™Š‹‰Œ˜Ğš™Ï€›’‹™ã£Î‘ã£¹ã£½";
+
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
+#include <exec/memory.h>
+#include <exec/io.h>
+#include <proto/exec.h>
+#include <proto/dos.h>
+#include <proto/intuition.h>
+#include <proto/graphics.h>
+#include <proto/diskfont.h>
+#include <proto/reqtools.h>
+#include <proto/gadtools.h>
+#include <libraries/gadtools.h>
+#include <intuition/intuition.h>
+#include <graphics/displayinfo.h>
+#include <dos/dostags.h>
+#include <clib/keymap_protos.h>
+#include <devices/keymap.h>
+#include <devices/serial.h>
+#include <devices/timer.h>
+#include <devices/inputevent.h>
+#include <libraries/reqtools.h>
+#include "SXStructs.h"
+#include "SX.h"
+
+/* ================================================================== */
+/* ========================= PROTO TYPES ============================ */
+/* ================================================================== */
+
+void MainLoop(void);
+void WaitForCall (void);
+void CheckOnlineKey(UBYTE code);
+void RemoteLogin(void);
+void CheckLocalKey(UWORD code);
+int OpenSerial (void);
+void WaitBuf (void);
+void upcase(char * str);
+void Login (void);
+void CalcTimeLeft(void);
+void JoinConf(UWORD confnum, BOOL hitreturn);
+void TestDoor(void);
+void RunDoor(char *door, UWORD type, char *exearg);
+void InitModem(void);
+void WaitScreen(void);
+void DropDTR(BOOL sendio);
+void StartCapture(void);
+int OpenTimer(void);
+void SetTimer(ULONG secs, ULONG micros);
+void CloseTimer(void);
+long mytime(void);
+unsigned char * mytimestr(BOOL sec);
+unsigned char * mydatestr(void);
+extern BOOL CheckMulti(void);
+
+
+/* ================================================================== */
+/* ===================== CUSTOM STRUCTURES ========================== */
+/* ================================================================== */
+
+extern struct ExecBase	*SysBase;
+struct IntuitionBase	*IntuitionBase;
+struct GfxBase		*GfxBase;
+struct ReqToolsBase	*ReqToolsBase;
+struct Library		*DiskfontBase,
+			*GadToolsBase,
+			*XProtocolBase;
+struct StructsStruct	*Structs;
+struct AmigaStruct	Amiga;
+struct StringsStruct	*stg;
+struct VariablesStruct	var;
+
+UBYTE buf[512], charbuf[128];
+long comdex;
+char *history[30];
+
+UWORD pens[] = { 7,4,7,7,6,4,7,0,5,4,7,4,65535 }, color[17], c;
+
+struct TagItem tags[]={{SYS_Input,0},{SYS_Output,0},{SYS_Asynch,TRUE},{NP_Priority,0},{TAG_DONE,0}};
+struct TextAttr topaz = {"topaz.font",8,0,0};
+struct TextAttr ansia = {"topaz.font",8,0,0};
+struct TextFont *ansifont;
+
+
+/* ================================================================== */
+/* ========================= MAIN PROGRAM =========================== */
+/* ================================================================== */
+
+
+
+int main(int argc, char *argv[])
+{
+	char nodeport[14];
+
+	if(argc < 2 || !argv[1] || strcmp(argv[1],"?")==0 || argv[1][0]==0)
+	{
+args:
+		PutStr( "›0;32;43m System-X 1.06 (eSSeXX) ›m\n\n"
+			"›4mArguments:›m\n\n"
+			"	SX <node> [<options>]\n\n"
+			"›4mOptions available:›m\n\n"
+			"	-d<baud>	direct connection at <baud>\n"
+			"	-lc		direct local login\n"
+			"	-lo		direct sysop login\n\n"
+			"›4mExamples:›m\n\n"
+			"	run SX 1			(Load node 1 normally)\n"
+			"	run SX 1 -lo			(Direct operator login)\n"
+			"	run SX 1 -d28800		(Direct connect at 28800)\n"
+			"	SX 1 -d%B			(Put this in TrapDoor.CFG)\n\n");
+		return(0);
+	}
+
+	var.node = atoi(argv[1]);
+	if(var.node > 255  ||  var.node < 1) goto args;
+
+	mysprintf(buf, "SX Node %ld", var.node);
+	SetProgramName(buf);
+
+	if(argc > 2  &&  argv[2])
+	{
+
+		if(argv[2][0]=='-' && argv[2][1]=='d')
+		{
+			var.baud = atol((char *)argv[2][2]);
+			var.direct = TRUE;
+		}
+
+		if(strcmp(argv[2], "-lo")==0)
+		{
+			var.SYSOPLOGIN = TRUE;
+			var.LOCAL = TRUE;
+			var.baud = Structs->Serial.dcerate;
+			var.direct = TRUE;
+		}
+
+		if(strcmp(argv[2], "-lc")==0)
+		{
+			var.LOCAL = TRUE;
+			var.baud = Structs->Serial.dcerate;
+			var.direct = TRUE;
+		}
+
+	}
+
+	mysprintf(nodeport, "SX-Node%ld", var.node);
+	if(FindPort(nodeport))
+	{
+		PutStr("That node is already active.\n");
+		return(10);
+	}
+
+	if(!(Amiga.serverport = FindPort("SX-MCP")))
+	{
+		PutStr("\nSX-MCP not active! Please execute it first.\n");
+		return(10);
+	}
+
+	Amiga.nodemp = CreatePort(nodeport,0L);
+	Amiga.capfh = 0;
+
+	if(((struct Library *)SysBase)->lib_Version > 35)
+	{
+		DiskfontBase = OpenLibrary("diskfont.library", 36);
+		if(DiskfontBase)
+		{
+			ReqToolsBase = (struct ReqToolsBase *)OpenLibrary (REQTOOLSNAME, 0);
+			if(ReqToolsBase)
+			{
+				GfxBase = ReqToolsBase -> GfxBase;
+				GadToolsBase = ReqToolsBase -> GadToolsBase;
+				IntuitionBase = ReqToolsBase -> IntuitionBase;
+
+				Structs = AllocMem(sizeof(struct StructsStruct), MEMF_PUBLIC|MEMF_CLEAR);
+				if(Structs)
+				{
+					Structs->McpMsg.Msg.mn_ReplyPort = CreateMsgPort();
+
+					stg = AllocMem(sizeof(struct StringsStruct), MEMF_PUBLIC|MEMF_CLEAR);
+					if(stg)
+					{
+						Servermsg(1);
+						SetActive(22, 0);
+
+						LoadPrefs();
+						LoadLocalDis();
+						LoadArcs();
+						LoadConfs();
+
+						Amiga.ReadConPort = CreateMsgPort();
+						Amiga.WriteConPort = CreateMsgPort();
+
+						var.RAWARROW = TRUE;
+
+						mysprintf(stg->title, "SX 1.06 (eSSeXX) "__DATE__"                                      Node: %ld", var.node);
+
+						if(!(Structs->NodePrefs.flags&(1<<1))) OpenDisplay(0); else var.CON = FALSE;
+
+						DeCrypt(credits);
+						DeCrypt(ver);
+						OpenSerial();
+						if(OpenTimer())
+						{
+	/*** MAIN LOOP ***/
+
+	while(!var.done)
+	{
+		var.bytesrec = 0;
+		var.bytessent = 0;
+		Structs->SXStr[42] = "Done!\r\n";
+		Structs->SXStr[17] = "*";
+		var.CALLER = FALSE;
+		if(!var.direct)
+		{
+			WaitScreen();
+			InitModem();
+		}
+		if(var.CON)
+		{
+			FixTitle();
+			EraseRect(Amiga.rp, 2, 2, 603, 18);
+			DrawImage(Amiga.rp, Amiga.sxbbsImage, (Structs->ScreenMode.DisplayWidth-236)/2, 5);
+			SendIO((struct IORequest *)&Amiga.conreadreq);
+		}
+		SetActive(22, 0);
+
+		if(!var.direct)
+			WaitForCall();
+		else
+			var.CALLER = TRUE;
+
+		if(var.panel) PanelPrompts();
+
+		if(!var.done)
+		{
+			if(var.CON)
+			{
+				OffMenu(Amiga.win, FULLMENUNUM(2, -1, 0));
+				OnMenu(Amiga.win, FULLMENUNUM(1, -1, 0));
+			}
+			var.CARRIER = TRUE;
+
+			if(var.CALLER) Login();
+
+			if(var.CON)
+			{
+				WaitBuf();
+				AbortIO(&Amiga.conreadreq);
+				WaitIO(&Amiga.conreadreq);
+			}
+			if(var.direct)
+				var.done = TRUE;
+			else {
+				LoadLocalDis();
+				var.LOCAL = FALSE;
+				var.SYSOPLOGIN = FALSE;
+				if(var.CON)
+				{
+					OnMenu(Amiga.win, FULLMENUNUM(2, -1, 0));
+					OffMenu(Amiga.win, FULLMENUNUM(1, -1, 0));
+				}
+			}
+		}
+	}
+
+	/*** END OF MAIN LOOP ***/
+
+							CloseTimer();
+						}
+
+						CloseDisplay();
+						if(var.SER)
+						{
+							AbortIO(&Amiga.serreadreq);
+							WaitIO(&Amiga.serreadreq);		/* close serial */
+							CloseDevice((struct IORequest *)&Amiga.serreadreq);
+							DeleteMsgPort(Amiga.ReadSerPort);
+							DeleteMsgPort(Amiga.WriteSerPort);
+						}
+
+						if(Amiga.ReadConPort)DeleteMsgPort(Amiga.ReadConPort);
+						if(Amiga.WriteConPort)DeleteMsgPort(Amiga.WriteConPort);
+						FreePrefs();
+
+						Servermsg(2);
+
+						FreeMem(stg, sizeof(struct StringsStruct));
+					}
+
+					DeleteMsgPort(Structs->McpMsg.Msg.mn_ReplyPort);
+					FreeMem(Structs, sizeof(struct StructsStruct));
+				}
+				CloseLibrary ((struct Library *)ReqToolsBase);
+			} else
+				PutStr("I need reqtools.library\n");
+
+			CloseLibrary(DiskfontBase);
+		}
+	}
+
+	DeletePort(Amiga.nodemp);
+
+	if(Amiga.capfh) Close(Amiga.capfh);
+}
+
+VOID WaitForCall(void)
+{
+	ULONG signals;
+	UBYTE key = 0;
+	struct Message *msg;
+	UWORD co=0, j;
+	char enter[82];
+
+	stg -> serbuf[1] = 0;
+
+	while(!var.done && !var.CALLER)
+	{
+		signals = SXWait();
+
+		if(var.SER)
+		{
+			if(signals & var.sersig)
+			{
+				while ((msg = GetMsg(Amiga.ReadSerPort)) && !var.CALLER)
+				{
+					if(msg == (struct Message *)&Amiga.serreadreq)
+					{
+						if(var.CON) ConWrite(stg->serbuf, Amiga.serreadreq.IOSer.io_Actual);
+
+						j=0;
+						while(j < Amiga.serreadreq.IOSer.io_Actual)
+						{
+							if(co==80)
+							{
+								co=0;
+								enter[co]=0;
+							}
+							if(stg->serbuf[j]==10 || stg->serbuf[j]==13)
+							{
+								enter[co]=0;
+								co=0;
+							} else {
+								enter[co]=stg->serbuf[j];
+								co++;
+							}
+							if(co==0 && !var.term)
+							{
+								if(strncmp(enter, Structs->Serial.ring, strlen(Structs->Serial.ring))==0) SerWrite(Structs->Serial.answer);
+								if(strncmp(enter, Structs->Serial.connect, strlen(Structs->Serial.connect))==0)
+								{
+									var.CALLER=TRUE;
+									var.baud=atol((char *)&enter[strlen(Structs->Serial.connect)+1]);
+									if(var.baud < 1) var.baud = Structs->Serial.dcerate;
+									if(var.baud < 1) var.baud = 19200;
+									if(strcmp(enter, "CONNECT")==0)
+										mysprintf(stg -> cstring, "CONNECT %ld", Structs->Serial.dcerate);
+									else
+										strcpy(stg -> cstring, enter);
+								}
+							}
+							j++;
+						}
+					}
+					Amiga.serreadreq.IOSer.io_Command = SDCMD_QUERY;
+					DoIO(&Amiga.serreadreq);
+					Amiga.serreadreq.IOSer.io_Command = CMD_READ;
+					Amiga.serreadreq.IOSer.io_Length = Amiga.serreadreq.IOSer.io_Actual;
+					if(Amiga.serreadreq.IOSer.io_Length>512) Amiga.serreadreq.IOSer.io_Length=512;
+					if(Amiga.serreadreq.IOSer.io_Length<1) Amiga.serreadreq.IOSer.io_Length=1;
+					SendIO(&Amiga.serreadreq);
+				}
+			}
+		}
+
+		if(var.CON)
+		{
+			if(signals & var.consig)
+			{
+				stg->conbuf[1] = 0;
+				if (msg = GetMsg(Amiga.ReadConPort))
+				{
+					if(msg == (struct Message *)&Amiga.conreadreq)
+					{
+						if(stg->conbuf[0]==155)
+						{
+							DoIO(&Amiga.conreadreq);
+							key = stg->conbuf[0];
+							DoIO(&Amiga.conreadreq);
+							/*switch(key)
+							{
+							case 65: SerWrite("[A"); break;
+							case 66: SerWrite("[B"); break;
+							case 67: SerWrite("[C"); break;
+							case 68: SerWrite("[D"); break;
+							}*/
+						} else {
+							key = 0;
+							if(var.SER)
+							{
+								if(Structs->Serial.misc&(1<<0)) goto jump;
+								Amiga.serwritereq.IOSer.io_Command	= SDCMD_QUERY;
+								DoIO(&Amiga.serwritereq);
+								Amiga.serwritereq.IOSer.io_Command 	= CMD_WRITE;
+								if(!(Amiga.serwritereq.io_Status&(1L<<3)))
+								{
+jump:									SerWrite(stg->conbuf);
+								}
+							} else
+								Local(stg->conbuf);
+						}
+					}
+					SendIO(&Amiga.conreadreq);
+					if(key && !var.term) CheckLocalKey(key+32);
+				}
+			}
+		}
+	}
+
+	if(var.SER)
+	{
+		AbortIO(&Amiga.serreadreq);
+		WaitIO(&Amiga.serreadreq);
+		Amiga.serreadreq.IOSer.io_Length = 1;
+		Amiga.serreadreq.IOSer.io_Command = CMD_READ;
+		SendIO(&Amiga.serreadreq);
+	}
+
+	WaitBuf();
+}
+
+void ReserveNode(void)
+{
+	var.CALLER=TRUE;
+	var.LOCAL=TRUE;
+	var.CARRIER=TRUE;
+	ActivateWindow(Amiga.win);
+	WaitBuf();
+	Local("›m\r\nEnter name to reserve for: ");
+	LineInput(33,0,0);
+	strcpy(stg->reserve,charbuf);
+	if(stg->reserve[0]!='\0')
+		mysprintf(buf, "›m\r\n\r\nNow reserved for ›36m%s›m.\r\n", stg->reserve);
+	else
+		strcpy(buf, "›m\r\n\r\nThis node is now ›36mnot ›mreserved.\r\n");
+	Local(buf);
+	var.LOCAL=FALSE;
+	var.CALLER=FALSE;
+}
+
+void CheckWin(struct Window *win)
+{
+	struct MenuItem *item;
+	struct IntuiMessage *message;
+	UWORD menuNumber, menuNum, itemNum;/*, subNum;*/
+	UWORD code, mx, my;
+	BOOL flag = FALSE, temp, redraw = FALSE;
+
+	while (message = (struct IntuiMessage *)GetMsg(win->UserPort))
+	{
+		code  = message->Code;
+		switch (message->Class)
+		{
+		case IDCMP_MENUPICK:
+			FixTitle();
+			menuNumber = message->Code;
+			while (menuNumber != MENUNULL)
+			{
+				item = ItemAddress(Amiga.menuStrip, menuNumber);
+				menuNum = MENUNUM(menuNumber);
+				itemNum = ITEMNUM(menuNumber);
+				/*subNum  = SUBNUM(menuNumber);*/
+
+				switch(menuNum)
+				{
+					case 0:
+						switch(itemNum)
+						{
+						case 0:
+rtEZRequestTags("  SX 1.06 (eSSeXX) By Michael Clasen\n\n"         
+		      "  Project Started .. : Dec 15 1996 By Peter Zelezny\n"
+                "  Go on developing . : Nov 1998 By Michael Clasen\n"
+		      "  Last Compiled .... : "__DATE__"\n"
+		      "  Compiler Used .... : SAS/C v6.58\n\n"
+		      "  Support WWW: http://amichurch.home.ml.org\n\n"
+		      "  For assistance email house@luebeck.netsurf.de\n",
+		"OK", NULL, NULL,
+		RTEZ_ReqTitle,	"About SX (eSSeXX)",
+		RT_Window,	win,
+		RT_ReqPos,	REQPOS_CENTERSCR,
+		TAG_DONE);
+							FixTitle();
+							break;
+						case 2:
+							DropDTR(TRUE);
+							var.done = TRUE;
+							break;
+						}
+						break;
+					case 1:
+						switch(itemNum)
+						{
+						case 0:
+							InstSend();
+							break;
+						case 1:
+							RawReceive(Structs->Cfg->ULPath, TRUE);
+							break;
+						case 3:
+							var.lastleft += 120;
+						case 4:
+							var.lastleft -= 60;
+							CalcTimeLeft();
+							UpdateTimeLeft();
+							break;
+						case 6:
+							DropDTR(TRUE);
+							break;
+						case 8:
+							Chat();
+							break;
+						case 9:
+							if(item->Flags & CHECKED)
+								var.disabletimeout = TRUE;
+							else
+								var.disabletimeout = FALSE;
+							break;
+						}
+						break;
+					case 2:
+						if(!var.CALLER)
+						{
+							switch(itemNum)
+							{
+							case 0:
+								var.CALLER=TRUE;
+								var.LOCAL=TRUE;
+								Local("\r\n›m›KF2 ›35m- ›mLocal Login\r\n");
+								var.baud=Structs->Serial.dcerate;
+								ActivateWindow(win);
+								break;
+							case 1:
+								var.SYSOPLOGIN=TRUE;
+								var.CALLER=TRUE;
+								var.LOCAL=TRUE;
+								Local("\r\n›m›KF1 ›35m- ›mSysOp Login\r\n");
+								var.baud=Structs->Serial.dcerate;
+								ActivateWindow(win);
+								break;
+							case 2:
+								RemoteLogin();
+								break;
+							case 4:
+								InitModem();
+								break;
+							case 5:
+								ReserveNode();
+								break;
+							case 6:
+								var.CALLER=TRUE;
+								var.CARRIER=TRUE;
+								var.LOCAL=TRUE;
+								WaitBuf();
+								ActivateWindow(win);
+								FifoExecute(0,0);
+								Local("\r\n");
+								var.CALLER=FALSE;
+								var.CARRIER=FALSE;
+								var.LOCAL=FALSE;
+								break;
+							case 7:
+								if(item->Flags & CHECKED)
+								{
+									PS("›m\r\nEntering Terminal Mode. Software auto-answer now off.\r\n");
+
+									SetActive(111, 0);
+
+									OnMenu(Amiga.win, FULLMENUNUM(1, -1, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(1, 3, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(1, 4, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(1, 8, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(1, 9, 0));
+
+									OffMenu(Amiga.win, FULLMENUNUM(2, 0, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(2, 1, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(2, 2, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(2, 4, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(2, 5, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(2, 6, 0));
+
+									OffMenu(Amiga.win, FULLMENUNUM(3, 0, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(3, 1, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(3, 2, 0));
+									var.term = TRUE;
+									LoadProtocol('Z');
+								} else {
+									PS("›m\r\nEntering BBS Mode. Software auto-answer now on.\r\n");
+
+									SetActive(22, 0);
+
+									OnMenu(Amiga.win, FULLMENUNUM(1, 3, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(1, 4, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(1, 8, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(1, 9, 0));
+									OffMenu(Amiga.win, FULLMENUNUM(1, -1, 0));
+
+									OnMenu(Amiga.win, FULLMENUNUM(2, 0, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(2, 1, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(2, 2, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(2, 4, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(2, 5, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(2, 6, 0));
+
+									OnMenu(Amiga.win, FULLMENUNUM(3, 0, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(3, 1, 0));
+									OnMenu(Amiga.win, FULLMENUNUM(3, 2, 0));
+									var.term = FALSE;
+								}
+								break;
+							}
+						}
+						break;
+					case 3:
+						switch(itemNum)
+						{
+						case 0:
+							if(!var.edit)
+							{
+								temp = var.SER;
+								if(!var.CALLER)
+								{
+									var.CALLER=TRUE;
+									var.CARRIER=TRUE;
+									var.LOCAL=TRUE;
+									EditUser(FALSE);
+									var.CALLER=FALSE;
+									var.CARRIER=FALSE;
+									var.LOCAL=FALSE;
+									SetActive(22, 0);
+									WaitScreen();
+								} else {
+									EditUser(FALSE);
+								}
+								var.SER = temp;
+							}
+							break;
+						case 1:
+							if(!var.edit)
+							{
+								temp = var.SER;
+								if(!var.CALLER)
+								{
+									var.CALLER=TRUE;
+									var.CARRIER=TRUE;
+									var.LOCAL=TRUE;
+									EditUser(TRUE);
+									var.CALLER=FALSE;
+									var.CARRIER=FALSE;
+									var.LOCAL=FALSE;
+									SetActive(22, 0);
+									WaitScreen();
+								} else
+									EditUser(TRUE);
+
+								var.SER = temp;
+							}
+							break;
+						case 2:
+							AsciiSend();
+							break;
+						case 3:
+							flag = TRUE;
+							break;
+						case 4:
+							if(item->Flags & CHECKED)
+								StartCapture();
+							else {
+								if(Amiga.capfh)
+								{
+									Close(Amiga.capfh);
+									Amiga.capfh = 0;
+								}
+							} 
+							break;
+						}
+						break;
+					case 4:
+						switch(itemNum)
+						{
+						case 0:
+							redraw = Pens();
+							break;
+						case 1:
+							redraw = ScreenModeReq();
+							break;
+						case 2:
+							Palette();
+							break;
+						}
+						break;
+				}
+				/*mysprintf(buf, "menu: %ld  item: %ld  sub: %ld\n", menuNum, itemNum, subNum);
+				PutStr(buf);*/
+				menuNumber = item->NextSelect;
+			}
+			break;
+		case IDCMP_CLOSEWINDOW:
+			flag = TRUE;
+			break;
+		case IDCMP_RAWKEY:
+			if(var.CALLER) CheckOnlineKey(code-32);
+			else CheckLocalKey(code);
+			break;
+		case IDCMP_ACTIVEWINDOW:
+			if(win == Amiga.infowin) InfoWinBorder(FALSE);
+			break;
+		case IDCMP_INACTIVEWINDOW:
+			if(win == Amiga.infowin) InfoWinBorder(TRUE);
+			break;
+		case IDCMP_MOUSEBUTTONS:
+			if(code==104)	/* up = 232 */
+			{
+				mx = message->MouseX;
+				my = message->MouseY;
+				if(mx>603 && mx<639 && my>3 && my<19) {
+					if(var.panel) {
+						OutP();
+						var.panel=FALSE;
+						if(var.USER)
+						{
+							EraseRect(Amiga.rp,2,2,603,18);
+							UpdateUserInfo();
+						}
+					} else {
+						InP();
+						var.panel=TRUE;
+						if(var.USER)
+						{
+							EraseRect(Amiga.rp,2,2,603,18);
+							PanelPrompts();
+						}
+					}
+				}
+			}
+			break;
+		}
+		ReplyMsg((struct Message *)message);
+	}
+	if(flag)
+		CloseDisplay();
+	else {
+		if(redraw)
+		{
+			CloseDisplay();
+			OpenDisplay(TRUE);
+		}
+	}
+}
+
+void CheckOnlineKey(UBYTE code)
+{
+	BOOL OLDSER = var.SER;
+
+	code -= 47;
+	switch(code)
+	{
+	case 1:
+		Chat();
+		if(!var.chat && stg->promptstr[0] != 0) MCIPS(stg->promptstr, strlen(stg->promptstr), 0, 0);
+		break;
+	case 2:
+		var.lastleft += 1200;
+	case 3:
+		var.lastleft -= 600;
+		CalcTimeLeft();
+		UpdateTimeLeft();
+		break;
+	case 4:
+		InstSend();
+		if(stg->promptstr[0] != 0) MCIPS(stg->promptstr, strlen(stg->promptstr), 0, 0);
+		break;
+	case 5:
+		if(var.CON) ActivateWindow(Amiga.win);
+		FifoExecute(0, 0);
+		PSLen("\r\n", 2);
+		break;
+	case 6:
+		if(!var.edit)
+		{
+			OLDSER = var.SER;
+			EditUser(FALSE);
+			var.SER = OLDSER;
+			if(!var.CALLER) WaitScreen();
+			if(!var.edit && stg->promptstr[0] != 0) MCIPS(stg->promptstr, strlen(stg->promptstr), 0, 0);
+		}
+		break;
+	case 10:
+		DropDTR(TRUE);
+		break;
+	case 16:
+		var.SER = FALSE;
+		ShowAnsi("SX:TXT/OnLineHelp.TXT",0,0,0,0,0,0);
+		var.SER = OLDSER;
+		break;
+	case 60:
+		var.lastleft -= 120;
+	case 61:
+		var.lastleft += 60;
+		CalcTimeLeft();
+		UpdateTimeLeft();
+		break;
+	}
+}
+
+void RemoteLogin(void)
+{
+	if(Carrier())
+	{
+		var.CALLER = TRUE;
+		var.LOCAL = FALSE;
+		var.baud = Structs->Serial.dcerate;
+	} else
+		Local("\r\nCarrier not present.\r\n");
+}
+
+void CheckLocalKey(UWORD code)
+{
+	BOOL OLDSER;
+
+	code -= 79;
+	mysprintf(buf,"%ld\n",code);
+	PutStr(buf);   // test here !!!!!!!!!
+	switch(code)
+	{
+	case 1:
+		var.SYSOPLOGIN=TRUE;
+		var.CALLER=TRUE;
+		var.LOCAL=TRUE;
+		Local("\r\n›m›KF1 ›35m- ›mSysOp Login\r\n");
+		var.baud=Structs->Serial.dcerate;
+		ActivateWindow(Amiga.win);
+		break;
+	case 2:
+		var.CALLER=TRUE;
+		var.LOCAL=TRUE;
+		Local("\r\n›m›KF2 ›35m- ›mLocal Login\r\n");
+		var.baud=Structs->Serial.dcerate;
+		ActivateWindow(Amiga.win);
+		break;
+	case 3:
+		RemoteLogin();
+		break;
+	case 4:
+		ReserveNode();
+		break;
+	case 5:
+		var.CALLER=TRUE;
+		var.CARRIER=TRUE;
+		var.LOCAL=TRUE;
+		WaitBuf();
+		ActivateWindow(Amiga.win);
+		FifoExecute(0,0);
+		Local("\r\n");
+		var.CALLER=FALSE;
+		var.CARRIER=FALSE;
+		var.LOCAL=FALSE;
+		break;
+	case 6:
+		if(!var.edit)
+		{
+			var.CALLER=TRUE;
+			var.CARRIER=TRUE;
+			var.LOCAL=TRUE;
+			OLDSER=var.SER;
+			EditUser(FALSE);
+			var.SER=OLDSER;
+			var.CALLER=FALSE;
+			var.CARRIER=FALSE;
+			var.LOCAL=FALSE;
+			SetActive(22, 0);
+			if(!var.CALLER) WaitScreen();
+		}
+		break;
+	/*case 7:
+		if(var.term)
+		{
+			var.term = FALSE;
+			PS("›m\r\nSoftware auto answer now ›36mON›m.\r\n");
+		} else {
+			var.term = TRUE;
+			PS("›m\r\nSoftware auto answer now ›36mOFF›m.\r\n");
+		}
+		break;*/
+	case 8:
+		InitModem();
+		break;
+	case 9:
+	case 10:
+		var.done = TRUE;
+		break;
+	case 16:
+      ShowAnsi("SX:TXT/OffLineHelp.TXT",0,0,0,0,0,0);
+      WaitScreen();
+		break;
+	}
+}
+
+int OpenSerial(void)
+{
+	var.SER = FALSE;
+
+	Amiga.ReadSerPort = CreateMsgPort();
+	if(Amiga.ReadSerPort)
+	{
+		Amiga.WriteSerPort = CreateMsgPort();
+		if(Amiga.WriteSerPort)
+		{
+			Amiga.serreadreq.IOSer.io_Message.mn_ReplyPort = Amiga.ReadSerPort;
+			Amiga.serreadreq.io_SerFlags = SERF_SHARED|SERF_7WIRE|SERF_RAD_BOOGIE|SERF_XDISABLED;
+
+			if(OpenDevice(Structs->Serial.device,Structs->Serial.unit,(struct IORequest *)&Amiga.serreadreq,0) != 0)
+			{
+				DeleteMsgPort(Amiga.WriteSerPort);
+				mysprintf(buf, "Cannot open %s.\r\n", Structs->Serial.device);
+				if(var.CON) Local(buf); else PutStr(buf);
+			} else {
+				Amiga.serwritereq = Amiga.serreadreq;
+				Amiga.serwritereq.IOSer.io_Message.mn_ReplyPort = Amiga.WriteSerPort;
+				Amiga.serwritereq.IOSer.io_Command	= SDCMD_SETPARAMS;
+				Amiga.serwritereq.io_Baud	 	= Structs->Serial.dcerate;
+				Amiga.serwritereq.io_SerFlags		= SERF_SHARED|SERF_7WIRE|SERF_RAD_BOOGIE|SERF_XDISABLED;
+				Amiga.serwritereq.io_RBufLen		= 16384L;
+				Amiga.serwritereq.io_CtlChar		= 0x11130000L;
+				DoIO(&Amiga.serwritereq);
+
+				Amiga.serwritereq.IOSer.io_Command 	= CMD_WRITE;
+				Amiga.serwritereq.IOSer.io_Flags	= IOF_QUICK;
+
+				Amiga.serreadreq.IOSer.io_Command 	= CMD_READ;
+				Amiga.serreadreq.IOSer.io_Data		= &stg->serbuf;
+				Amiga.serreadreq.IOSer.io_Length 	= 1;
+				SendIO(&Amiga.serreadreq);
+				var.SER = TRUE;
+				return(1);
+			}
+		}
+		DeleteMsgPort(Amiga.ReadSerPort);
+	}
+	return(0);
+}
+
+void WaitBuf(void)
+{
+	if(var.SER) {
+		while (GetMsg(Amiga.ReadSerPort)) SendIO(&Amiga.serreadreq);
+	}
+	if(var.CON) {
+		while (GetMsg(Amiga.ReadConPort)) SendIO(&Amiga.conreadreq);
+	}
+}
+
+int Account (void)
+{
+	BPTR fh;
+	BOOL fin=FALSE, found=FALSE;
+	UWORD e=0, i=0;
+
+	if(!var.SYSOPLOGIN)
+	{
+		charbuf[0]='\0';
+		while(charbuf[0]=='\0' && var.CARRIER)
+		{
+			e++;
+			if(e==6)
+			{
+				c=5;
+				return(0);
+			}
+			PS (Structs->SXStr[1]);/*PS ("\r\n\r\nEnter your name: ");*/
+			LineInput(30,FALSE,"");
+			if(stricmp(charbuf, "NEW")==0) return(0);
+			history[comdex][0] = 0;
+		     //FreeMem(history[comdex], 64); // remove password from recall buffer 
+          }
+	}
+	if(!var.CARRIER) return(0);
+	if(!var.SYSOPLOGIN)PS(Structs->SXStr[2]);
+	if(fh = Open("SX:User.Index", MODE_OLDFILE))
+	{
+		while(!fin)
+		{
+			i++;
+			if(FRead(fh, &Structs->UserIndex, sizeof(struct UserIndexStruct), 1)==0) fin=TRUE;
+
+			//if(!Structs->UserIndex.flags&(1<<6)) // IF NOT DELETED
+			//{
+				if(stricmp(Structs->UserIndex.handle, charbuf)==0 || stricmp(Structs->UserIndex.realname, charbuf)==0 || var.SYSOPLOGIN==TRUE)
+				{
+					found = TRUE;
+					fin = TRUE;
+					if(!var.SYSOPLOGIN)
+					{
+						PS(Structs->SXStr[3]);
+						if(stricmp(Structs->UserIndex.handle,charbuf)==0) PS(Structs->UserIndex.handle);
+						else PS(Structs->UserIndex.realname);
+					}
+					LoadAccount(i, FALSE);
+					Structs->User.Slot_Number = i;
+					var.lastleft = Structs->User.Time_Left;
+					LoadProtocol(Structs->User.Protocol);
+
+					if(var.CON)
+					{
+						if(var.panel)
+						{
+							Move(Amiga.rp, 53, 13);
+							TextFmt(Amiga.rp, "%-21.21s", Structs->UserIndex.handle);
+						} else
+							EraseRect(Amiga.rp, 2, 2, 603, 18);
+					}
+					UpdateUserInfo();
+
+					if(Structs->User.ConfRJoin == 0) Structs->User.ConfRJoin = 1;
+					var.thisconf = Structs->User.ConfRJoin;
+					if(Structs->User.Expert!=0) var.EXPERT=TRUE; else var.EXPERT=FALSE;
+				}
+			//}
+		}
+		Close(fh);
+	}
+	if(found==FALSE) return(0);
+
+	if(!var.SYSOPLOGIN)
+	{
+		i=0;
+		while(i<4)
+		{
+			i++;
+			PS(Structs->SXStr[4]);	/*PS ("Enter your password: ");*/
+			LineInput(24,TRUE,"");
+			PSLen("\r\n", 2);
+			if(!var.CARRIER) return(0);
+			upcase(charbuf);
+			Servermsg(8);
+			if(memcmp(Structs->SXUser.password,buf,16)!=0)
+			{
+				if(i==4)
+				{
+					var.loginsecs = mytime();
+					Servermsg(3);
+					mysprintf(buf, "**************************************************************\n%s (%s) [%ld] %s (%s) %s\n",mydatestr(),mytimestr(TRUE),Structs->User.Slot_Number,Structs->User.Name, stg->cstring,Structs->User.Location);
+					CallerLog(buf);
+					PS(Structs->SXStr[26]);/*PS("\r\n\r\nPassword failure...\r\n");*/
+					DropDTR(TRUE);
+	    				mysprintf(buf, "%s (%s) %s Password Failure\n", mydatestr(), mytimestr(TRUE), Structs->User.Name);
+					CallerLog(buf);
+					if(!var.LOCAL) {
+						mysprintf(buf, "SX:Batch/LogOff.BAT %ld", var.node);
+						//system(buf);
+						SystemTagList(buf, 0);
+					}
+					Structs->McpMsg.data5 = mytime();
+					Servermsg(4);
+					return(0);
+				}
+				PS(Structs->SXStr[25]);/*PS("\r\n\r\nIncorrect, try again..*/
+			} else {
+				i=5;
+			}
+		history[comdex][0] = 0;
+               //FreeMem(history[comdex], 64);  //Bug here ??? NO!
+		}
+	}
+
+	if(stg->reserve[0])
+	{
+		if(stricmp(stg->reserve,Structs->User.Name)!=0)
+		{
+			ShowAnsi("Reserved",1,1,0,0,1,0);
+			DropDTR(TRUE);
+		} else
+			stg->reserve[0] = 0;
+	}
+
+	if((var.loginsecs/60/60/24) != (Structs->User.Time_Last_On/60/60/24))
+	{
+		var.lastleft = Structs->User.Time_Limit;
+		Structs->User.Time_Left = Structs->User.Time_Limit;
+		Structs->User.Daily_Bytes_Dld = 0;
+	}
+
+	if(Structs->User.Sec_Status==0)
+	{
+		ShowAnsi("LockedOut", 1, 1, 0, 0, 1, 0);
+		DropDTR(TRUE);
+	}
+
+	if(var.CARRIER)
+	{
+		var.loginsecs = mytime();
+		Structs->User.Times_Called++;
+		var.USER = TRUE;
+		Servermsg(3);
+		if(GetAccessSet(Structs->User.Sec_Status))
+		{
+			if(Structs->AccSet.flags&(1<<0)) PutAccessSet(&Structs->SXUser, &Structs->User);
+		}
+		return(1);
+	} else
+		return(0);
+}
+
+void upcase(char * str)
+{
+	WORD j = 0, i = strlen(str);
+
+	while(j < i)
+	{
+		str[j] = toupper(str[j]);
+		j++;
+	}
+}
+void Login (void)
+{
+	     
+     Amiga.Uploads = AllocMem(sizeof(struct List), MEMF_PUBLIC|MEMF_CLEAR);
+	NewList(Amiga.Uploads);
+
+	Amiga.Flags = AllocMem(sizeof(struct List), MEMF_PUBLIC|MEMF_CLEAR);
+	NewList(Amiga.Flags);
+
+     for(comdex=0;comdex<30; comdex++) history[comdex] = AllocMem(64,MEMF_PUBLIC|MEMF_CLEAR);
+     comdex = 1;
+
+     if(Structs->NodePrefs.systempass[0]!=0)
+	  {
+		SetActive(101, 0);
+		c = 0;
+syspass:
+		ShowAnsi("SX:TXT/SystemPass.TXT", 0, 0, 0, 0, 1, 0);
+		LineInput(17, 1, 0);
+		history[comdex][0] = 0;
+          //FreeMem(history[comdex], 64);  // free the eventually password from recallbuffer
+          PSLen("\r\n", 2);
+		if(stricmp(charbuf, Structs->NodePrefs.systempass) != 0)
+		{
+			c++;
+			if(c == 3)
+			{
+				PS(Structs->SXStr[26]);
+				goto reset2;
+			}
+			PS(Structs->SXStr[25]);
+			goto syspass;
+		     	     } 
+     }
+ReLog:
+
+	SetActive(21, 0);
+
+     /*
+     mysprintf(buf,"\r\nWelcome to %s, located in %s"
+		"\r\nRunning SX 1.06 (eSSeXX) Copyright (C) 1997 By Peter Zelezny."
+		"\r\nRegistered to Freeware. You are connected to Node %ld at %ld baud"
+		"\r\nConnection occured at %s %s.\r\n",Structs->Cfg->BBSName,Structs->Cfg->BBSLoc,var.node,var.baud,mydatestr(),mytimestr(TRUE));
+          PS(buf);
+     
+     */
+	PSFmt(credits, Structs->Cfg->BBSName, Structs->Cfg->BBSLoc, var.node, var.baud, mydatestr(), mytimestr(TRUE));
+
+	if(Structs->Doors.frontdoor[0] != 0)
+		RunDoor(Structs->Doors.frontdoor, Structs->Doors.fronttype, 0);
+	else {
+		if(DisMode() == 0) goto reset2;
+	}
+
+	if(ShowAnsi("ShutDown", 1, 1, 0, 0, 0, 3))
+	{
+		Delay(100);
+		DropDTR(TRUE);
+	}
+
+	ShowAnsi("PreLogin", 1, 1, 0, 0, 0, 3);
+
+	c = 0;
+	while(Account() == 0)
+	{
+		c++;
+		if(!var.CARRIER) goto reset;
+		if(stricmp(charbuf, "NEW") == 0)
+		{
+			NewUser();
+			SetActive(21, 0);
+		} else {
+			if(c == 6)
+			{
+				PS(Structs->SXStr[11]);	/*PS("Too many errors.\r\n");*/
+				goto reset;
+			}
+asknew:
+			PS(Structs->SXStr[12]);	/*PS("Not found in userbase. [R]etry, [C]ontinue as new user? ");*/
+			MyHotKey();
+			PS("\r\n");
+			if(stricmp(charbuf, "C") == 0)
+			{
+				NewUser();
+				SetActive(21, 0);
+			} else {
+				if(stricmp(charbuf, "R")!=0 && var.CARRIER) goto asknew;
+			}
+		}
+	}
+
+	if(!(Structs->NodePrefs.flags&(1<<2)))	// if NOT multi logins
+	{
+		if(CheckMulti())
+		{
+			PS(Structs->SXStr[140]);
+			DropDTR(TRUE);
+		}
+	}
+
+	if(var.USER)
+	{
+		CalcTimeLeft();
+		UpdateTimeLeft();
+
+		mysprintf(buf, "**************************************************************\n%s (%s) [%ld] %s (%s) %s\n", mydatestr(), mytimestr(TRUE), Structs->User.Slot_Number, Structs->User.Name, stg->cstring, Structs->User.Location);
+		CallerLog(buf);
+
+		ShowAnsi("PostLogin", 1, 1, 1, 1, 1, 0);
+
+		if(var.CARRIER)
+		{
+			JoinConf(var.thisconf, TRUE);
+
+			var.RL = FALSE;
+
+			MainMenu();
+		}
+
+		SetActive(12, 0);
+		if(!var.RL) ShowAnsi("GoodBye", 1, 1, 1, 1, 1, 0);
+
+		Structs->User.Time_Last_On = var.loginsecs;
+		Structs->User.ConfRJoin = var.thisconf;
+		CalcTimeLeft();
+		SaveAccount();
+		SaveFlags();
+		ClearFlags();
+
+		if(!var.LOCAL)
+		{
+			if(!var.CARRIER && var.offtype == 0) var.offtype = 1;
+			switch(var.offtype)
+			{
+			case 2:
+			case 0: strcpy(charbuf, "Off Normally"); break;
+			case 1: strcpy(charbuf, "Off Loss Carrier"); break;
+			}
+		    	mysprintf(buf, "%s (%s) %s %s\n", mydatestr(), mytimestr(TRUE), Structs->User.Name, charbuf);
+			CallerLog(buf);
+			if(!var.RL) DropDTR(TRUE);
+
+			mysprintf(buf, "SX:Batch/LogOff.BAT %ld", var.node);
+			SystemTagList(buf, 0);
+			//system(buf);
+			Structs->McpMsg.data1 = var.baud;
+		} else
+			Structs->McpMsg.data1 = 0;
+
+		Structs->McpMsg.data2 = var.offtype;
+		Structs->McpMsg.data5 = mytime();
+		Servermsg(4);
+
+		var.offtype = 0;
+		if(var.RL)
+		{
+			FreeStrings(); 
+			FreeMem(Amiga.Flags, sizeof(struct List));
+			Amiga.Flags = AllocMem(sizeof(struct List), MEMF_PUBLIC|MEMF_CLEAR);
+			NewList(Amiga.Flags);
+			goto ReLog;
+		}
+	}
+
+reset:
+	if(!var.USER) DropDTR(TRUE);
+	FreeStrings();
+
+reset2:
+	FreeMem(Amiga.Uploads, sizeof(struct List));
+	FreeMem(Amiga.Flags, sizeof(struct List));
+	for(comdex=0;comdex<30; comdex++) FreeMem(history[comdex], 64); // freemem for the commads buffer `history[x]`
+	var.CALLER = FALSE;
+ 	var.USER = FALSE;
+	if(var.paged)
+	{
+		var.paged = FALSE;
+		Structs->McpMsg.data1 = 0;
+		Servermsg(9);
+	}
+	if(stg->msgbases)
+	{
+		FreeMem(stg->msgbases, var.msgbasessize);
+		stg->msgbases = 0;
+	}
+     
+     
+}
+
+void CalcTimeLeft(void)
+{
+	Structs->User.Time_Left = var.lastleft - (mytime() - var.loginsecs);
+	Structs->User.Time_Used = Structs->User.Time_Limit - Structs->User.Time_Left;
+	if(Structs->User.Time_Left < 1  &&  var.CARRIER)
+	{
+		PS(Structs->SXStr[27]);	/*PS("\r\nOut of time..\r\n");*/
+		Structs->User.Time_Left=0;
+		DropDTR(TRUE);
+	}
+}
+
+void JoinConf(UWORD confnum, BOOL hitreturn)
+{
+	BPTR fh;
+
+	while(confnum < 1  ||  confnum > var.confs)
+	{
+		SetActive(16, 0);
+		ShowAnsi("Confs", 1, 1, 1, 1, 1, 0);
+		LineInput(30, 0, 0);
+		PSLen("\r\n", 2);
+		if(!var.CARRIER) return;
+		
+          confnum=atoi(charbuf);
+		if(charbuf[0]=='\0')confnum=1; // default conf ?
+	}
+
+	if(!CheckConfAccess(&Structs->SXUser, confnum))
+	{
+		PS(Structs->SXStr[104]);
+		return;
+	}
+
+	if(charbuf[0]!='\0' && confnum<=var.confs)
+	{
+        // changed here !!!
+		if(stg->msgbases)
+		{
+			FreeMem(stg->msgbases, var.msgbasessize);
+			stg->msgbases = 0;
+		}
+		mysprintf(buf, "%sMsgBases.DAT", Structs->Conf[confnum]->path);
+		fh = Open(buf, MODE_OLDFILE);
+		if(fh)
+		{
+			Seek(fh,0,1);
+			var.msgbasessize = Seek(fh,0,-1);
+			stg->msgbases = AllocMem(var.msgbasessize, MEMF_PUBLIC);
+			if(stg->msgbases) Read(fh, stg->msgbases, var.msgbasessize);
+			Close(fh);
+			var.msgareapo=(long)stg->msgbases;
+			var.thismsgarea = 1;
+			GotoMsgArea(1);
+			var.thismsgarea = 1;
+		} else {
+			var.thismsgarea = 0;
+		}
+		var.thisconf = confnum;
+        // to here :
+          mysprintf(buf, "%sJoin", Structs->Conf[confnum]->path);
+		if(ShowAnsi(buf, 0, 1, 1, 0, 1, 0) && !var.EXPERT && hitreturn) HitReturn();
+		
+	}
+}
+
+void TestDoor(void)
+{
+	BPTR lk;
+	int type;
+	char temp[52];
+
+	PS( "[0m\r\n(1) AmiExpress (XIM)"
+		"\r\n(2) AmiExpress AREXX (AIM)"
+		"\r\n(3) Paragon / MAXsBBS"
+		"\r\n(4) DayDream"
+		"\r\n(5) DayDream AREXX"
+		"\r\n(6) STDIO/DOS/Shell"
+		"\r\n(7) FAME (Experimental)"
+		"\r\n\r\nSelect door type: ");
+	LineInput(20,0,0);
+	PS("\r\n");
+	if(!var.CARRIER || charbuf[0]==0) return;
+
+	type=atoi(charbuf);
+
+	PS(Structs->SXStr[14]);	/*PS("\r\nEnter XIM filename to run: ");*/
+	LineInput(50, FALSE, 0);
+	if(!var.CARRIER) return;
+	PS("\r\n");
+	if(charbuf[0]!='\0')
+	{
+		if(type==6) goto runit;
+		lk = Lock(charbuf, ACCESS_READ);
+		if(lk) {
+			UnLock(lk);
+runit:
+			strcpy(temp, charbuf);
+			RunDoor(temp, type, 0);
+		} else
+			PS(Structs->SXStr[15]);/*PS("\r\nCannot find that door.\r\n");*/
+	}
+}
+
+void RunDoor(char *door, UWORD type, char *exearg)
+{
+	if(Structs->SXStr[18]) PS(Structs->SXStr[18]);
+
+	if(exearg && exearg[0]!=0)
+		mysprintf(buf, "%s %ld %s", door, var.node, exearg);
+	else
+		mysprintf(buf, "%s %ld", door, var.node);
+
+	switch(type)
+	{
+	case 1:
+		WaitForXIM(buf);
+		break;
+	case 2:
+		if(exearg && exearg[0]!=0)
+			mysprintf(buf, "doors:rexxdoor %ld %s %s", var.node, door, exearg);
+		else
+			mysprintf(buf, "doors:rexxdoor %ld %s", var.node, door);
+		WaitForXIM(buf);
+		break;
+	case 3:
+		WaitForParagon(buf);
+		break;
+	case 4:
+		WaitForDD(buf);
+		break;
+	case 5:
+		if(exearg && exearg[0]!=0)
+			strcpy(stg->arg, exearg);
+		else
+			stg->arg[0] = 0;
+		mysprintf(buf, "doors:rexx %ld %s", var.node, door);
+		WaitForDD(buf);
+		break;
+	case 6:
+		FifoExecute(door, exearg);
+		break;
+	case 7:
+		WaitForFAME(buf);
+		break;
+	default:
+		if(Structs->SXStr[13]) PS(Structs->SXStr[13]);/*PS("\r\nUnsupported door type.\r\n");*/
+		break;
+	}
+}
+
+void InitModem(void)
+{
+	if(var.SER)
+	{
+		AbortIO(&Amiga.serreadreq);
+		WaitIO(&Amiga.serreadreq);
+		Amiga.serreadreq.IOSer.io_Data = &stg->serbuf;
+		Amiga.serreadreq.IOSer.io_Length = 1;
+		Amiga.serreadreq.IOSer.io_Command = CMD_READ;
+		SendIO(&Amiga.serreadreq);
+		WaitBuf();
+
+		if(Structs->Serial.misc&(1<<0))
+		{
+			Amiga.serwritereq.IOSer.io_Command 	= CMD_WRITE;
+			goto jump;
+		}
+
+		Amiga.serwritereq.IOSer.io_Command	= SDCMD_QUERY;
+		DoIO(&Amiga.serwritereq);
+		Amiga.serwritereq.IOSer.io_Command 	= CMD_WRITE;
+
+		if(!(Amiga.serwritereq.io_Status&(1L<<3))) // !DSR
+		{
+jump:
+			Amiga.serwritereq.IOSer.io_Data = &Structs->Serial.initstr;
+			Amiga.serwritereq.IOSer.io_Length = strlen(Structs->Serial.initstr);
+			DoIO(&Amiga.serwritereq);
+			//SerWrite(Structs->Serial.initstr);
+		} else
+			Local("\r\n›0;32mModem not responding.›m\r\n");
+	}
+}
+
+void WaitScreen(void)
+{
+	var.LOCAL = TRUE;
+	var.CARRIER = TRUE;
+	ShowAnsi("SX:TXT/WaitCall.TXT", 0, 0, 0, 0, 0, 0);
+	var.LOCAL = FALSE;
+	var.CARRIER = Carrier();
+}
+
+void DropDTR(BOOL sendio)
+{
+	if(var.SER && !var.LOCAL && var.CARRIER)
+	{
+		AbortIO(&Amiga.serreadreq);
+		WaitIO(&Amiga.serreadreq);
+		CloseDevice(&Amiga.serreadreq);
+		Delay(60);
+		OpenDevice(Structs->Serial.device, Structs->Serial.unit,(struct IORequest *)&Amiga.serreadreq,0);
+		Amiga.serwritereq=Amiga.serreadreq;
+		Amiga.serwritereq.IOSer.io_Message.mn_ReplyPort = Amiga.WriteSerPort;
+		Amiga.serwritereq.IOSer.io_Command	= SDCMD_SETPARAMS;
+		Amiga.serwritereq.io_Baud	 	= Structs->Serial.dcerate;
+		Amiga.serwritereq.io_SerFlags		= SERF_SHARED|SERF_7WIRE|SERF_RAD_BOOGIE|SERF_XDISABLED;
+		Amiga.serwritereq.io_RBufLen		= 16384L;
+		Amiga.serwritereq.io_CtlChar		= 0x11130000L;
+		DoIO(&Amiga.serwritereq);
+
+		Amiga.serwritereq.IOSer.io_Command 	= CMD_WRITE;
+		Amiga.serwritereq.IOSer.io_Flags	= IOF_QUICK;
+
+		Amiga.serreadreq.IOSer.io_Command 	= CMD_READ;
+		Amiga.serreadreq.IOSer.io_Data		= &stg->serbuf;
+		Amiga.serreadreq.IOSer.io_Length 	= 1;
+		if(sendio) SendIO(&Amiga.serreadreq);
+	}
+	var.CARRIER = FALSE;
+}
+
+void StartCapture(void)
+{
+	struct rtFileRequester *filereq;
+	char fbuf[128] = "System-X.Cap";
+
+	if(filereq = rtAllocRequestA (RT_FILEREQ, NULL))
+	{
+		rtChangeReqAttr(filereq, RTFI_Dir, Structs->Cfg->DNPath, TAG_END);
+
+		if(rtFileRequest (filereq, fbuf, "Choose Capture Filename",
+			RT_LeftOffset,	20,
+			RT_TopOffset,	11,
+			RT_Screen, 	Amiga.scr,
+			RTFI_Height,	300,
+			RTFI_OkText,	"Start",
+			TAG_END))
+		{
+			strcpy(buf, filereq->Dir);
+			FixDir(buf);
+			//l = strlen(buf) - 1;
+			//if(buf[l]!='/' && buf[l]!=':') strcat(buf, "/");
+
+			strcat(buf, fbuf);
+
+			if(Amiga.capfh) Close(Amiga.capfh);
+
+			Amiga.capfh = Open(buf, MODE_READWRITE);
+			if(Amiga.capfh) Seek(Amiga.capfh, 0, OFFSET_END);
+		}
+		rtFreeRequest(filereq);
+		FixTitle();
+	}
+}
+
+int OpenTimer(void)
+{
+	Amiga.TimerPort = CreateMsgPort();
+	Amiga.TimerMsg = (struct timerequest *)CreateExtIO(Amiga.TimerPort,(long)sizeof(struct timerequest));
+	Amiga.TimerMsg->tr_node.io_Message.mn_ReplyPort = Amiga.TimerPort;
+
+	if(OpenDevice(TIMERNAME,UNIT_VBLANK,Amiga.TimerMsg,0L) == 0)
+		return(1);
+	else
+		return(0);
+}
+
+void SetTimer(ULONG secs, ULONG micros)
+{
+	Amiga.TimerMsg->tr_node.io_Command = TR_ADDREQUEST; /* add a new timer request */
+	Amiga.TimerMsg->tr_time.tv_secs    = secs;          /* seconds */
+	Amiga.TimerMsg->tr_time.tv_micro   = micros;        /* microseconds */
+	Amiga.TimerMsg->tr_node.io_Message.mn_ReplyPort = Amiga.TimerPort;
+	SendIO(Amiga.TimerMsg);     /* post the request to the timer device */
+}
+
+void CloseTimer(void)
+{
+	if(Amiga.TimerMsg)
+	{
+		CloseDevice(Amiga.TimerMsg);
+		DeleteExtIO(Amiga.TimerMsg);
+	}
+	if(Amiga.TimerPort) DeleteMsgPort(Amiga.TimerPort);
+}
+
+long mytime(void)
+{
+	struct DateStamp stamp;
+	DateStamp(&stamp);
+	return( (stamp.ds_Days*24*60*60) + (stamp.ds_Minute*60) + (stamp.ds_Tick/50) + 252460800 );
+}
+
+unsigned char * mytimestr(BOOL sec)
+{
+	struct DateTime stamp;
+	DateStamp(&stamp);
+	stamp.dat_Format  = FORMAT_USA;
+	stamp.dat_StrDay  = "Corruption";
+	stamp.dat_StrDate = "Digital  ";
+	stamp.dat_StrTime = "111111111";
+	stamp.dat_Flags   = 0;
+	DateToStr(&stamp);
+	if(!sec) stamp.dat_StrTime[5]=0;
+	return(stamp.dat_StrTime);
+}
+
+unsigned char * mydatestr(void)
+{
+	struct DateTime stamp;
+	DateStamp(&stamp);
+	stamp.dat_Format  = FORMAT_USA;
+	stamp.dat_StrDay  = "Corruption";
+	stamp.dat_StrDate = "Digital  ";
+	stamp.dat_StrTime = "111111111";
+	stamp.dat_Flags   = 0;
+	DateToStr(&stamp);
+	return(stamp.dat_StrDate);
+}

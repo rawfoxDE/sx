@@ -1,0 +1,4 @@
+Welcome to %s in %s.[E[A
+Running System-X 1.06 (eSSeXX) By [r]FoX - DigitalCorruption.[E[A
+You are connected to Node %ld at %ld Baud.[E[A
+Connection occured at %s %s.
