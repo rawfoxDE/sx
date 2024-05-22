@@ -1,0 +1,12 @@
+struct MCPMessage
+{
+	struct Message Msg;
+	UWORD command;
+	UWORD nodenum;
+	long data1;
+	long data2;
+	long data3;
+	long data4;
+	long data5;
+	char *action;
+};

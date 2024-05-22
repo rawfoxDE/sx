@@ -1,0 +1,12 @@
+struct MainStruct
+{
+	char BBSName[64];
+	char USERPath[64];
+	char BBSLoc[64];
+	char Sysop[64];
+	char DNPath[64];
+	char ULPath[64];
+	long nodes;
+	UWORD inac_timeout;
+	UWORD inac_warn;
+};

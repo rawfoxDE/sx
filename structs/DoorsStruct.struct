@@ -1,0 +1,13 @@
+struct DoorsStruct
+{
+	char	chatdoor[52];
+	UBYTE	chattype;
+	char	msgdoor[52];
+	UBYTE	msgtype;
+	char	frontdoor[52];
+	UBYTE	fronttype;
+	char	msgdoorreply[52];
+	UBYTE	msgdoorreplytype;
+	char	nfdoor[52];
+	UBYTE	nftype;
+};

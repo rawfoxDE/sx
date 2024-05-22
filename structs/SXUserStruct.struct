@@ -1,0 +1,15 @@
+struct SXUserStruct
+{
+	UWORD byteratio;
+	UWORD fileratio;
+	ULONG flags;
+	UWORD freefiles;
+	ULONG freebytes;
+	ULONG ConfAccess[10];
+	UWORD lastfilearea;
+	char computer[24];
+	char sentbyline[46];
+	char password[16];
+	long firstcall;
+	char reserved[110];
+};

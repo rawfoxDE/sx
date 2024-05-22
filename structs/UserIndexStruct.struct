@@ -1,0 +1,7 @@
+struct UserIndexStruct
+{
+	char handle[31];
+	char realname[31];
+	UBYTE flags; /* BIT 6 = DELETED!	*/
+	UBYTE unused;
+};

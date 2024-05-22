@@ -1,0 +1,13 @@
+struct MsgBaseStruct			// <confpath>/MsgBases.DAT
+{
+	char name[24];
+	UWORD maxmsgs;
+	UBYTE lowaccess;
+	UBYTE highaccess;
+	UWORD flags;
+	char res[66],
+	     fidoname[28],
+	     fidoorigin[58];
+	UWORD AddressID;
+	char res2[8];
+};

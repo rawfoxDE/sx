@@ -1,0 +1,14 @@
+struct SerialStruct
+{
+	char device[32];
+	WORD unit;
+	WORD misc;
+	long minrate;
+	long dcerate;
+	UBYTE sevenwire;
+	UBYTE shared;
+	char ring[16];
+	char connect[24];
+	char answer[16];
+	char initstr[48];
+};

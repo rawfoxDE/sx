@@ -1,0 +1,9 @@
+struct DisplayStruct
+{
+	char name[16];
+	char path[48];
+	char ext[4];
+	struct ScreenModeStruct ScreenMode;
+	ULONG flags;
+	char res[40];
+};

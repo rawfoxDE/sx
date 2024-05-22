@@ -1,0 +1,13 @@
+struct ScreenModeStruct
+{
+	ULONG DisplayID;
+	UWORD DisplayWidth;
+	UWORD DisplayHeight;
+	UWORD DisplayDepth;
+	ULONG reserved;
+	char fontname[32];
+	UWORD fontsize;
+	char device[32];
+	WORD unit;
+	ULONG flags;
+};

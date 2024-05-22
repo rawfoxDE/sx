@@ -1,0 +1,11 @@
+struct ProtoStruct
+{
+	char name[24];
+	char letter;
+	char null;
+	char type;
+	char efficiency;
+	char library[30];
+	char initstr[30];
+	char res[64];
+};

@@ -1,0 +1,13 @@
+struct AccessStruct
+{
+	char name[32];
+	UBYTE access;
+	UBYTE flags;
+	ULONG freefiles;
+	ULONG freebytes;
+	UWORD byteratio;
+	UWORD fileratio;
+	long Time_Limit;
+	ULONG ConfAccess[10];
+	char res[38];
+};

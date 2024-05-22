@@ -1,0 +1,12 @@
+struct ConfStruct
+{
+	char name[45];
+	char path[55];
+	char pass[16];
+	char filepath[52];
+	UWORD fileareas;
+	UWORD uploadarea;
+	UBYTE flf;
+	UBYTE flags;
+	char reserve[82];
+};

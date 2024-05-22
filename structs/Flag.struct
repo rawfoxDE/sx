@@ -1,0 +1,16 @@
+struct Flag
+{
+	struct Node flag_node;
+	char path[72];
+	char file[34];
+	ULONG size;
+	ULONG xfer;
+	ULONG cps;
+	UWORD secs;
+	UWORD mins;
+	UWORD hours;
+	UBYTE conf;
+	UBYTE area;
+	UBYTE free;
+	UBYTE misc;
+};

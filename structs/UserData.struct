@@ -1,0 +1,56 @@
+struct UserData {
+	char	Name[31],
+		Pass[9],
+		Location[30],
+		PhoneNumber[13];
+	USHORT	Slot_Number;
+	USHORT	Sec_Status,
+		Sec_Board,		/* File or Byte Ratio */
+		Sec_Library,		/* Ratio              */
+		Sec_Bulletin,		/* Computer Type      */
+		Messages_Posted;
+	ULONG	NewSinceDate,
+		ConfRead1,
+		ConfRead2,
+		ConfRead3,
+		ConfRead4,
+		ConfRead5,
+		ConfRead6,
+		ConfRead7,
+		ConfRead8,
+		ConfRead9;
+	char	Conference_Access[10];
+	USHORT	Uploads,
+		Downloads,
+		ConfRJoin,
+		Times_Called;
+	long	Time_Last_On,
+		Time_Used,
+		Time_Limit,
+		Time_Left;
+	ULONG	Bytes_Download,
+		Bytes_Upload,
+		Daily_Bytes_Limit,
+		Daily_Bytes_Dld;
+	char	Expert;
+	ULONG	ConfYM1,
+		ConfYM2,
+		ConfYM3,
+		ConfYM4,
+		ConfYM5,
+		ConfYM6,
+		ConfYM7,
+		ConfYM8,
+		ConfYM9;
+	long    BeginLogCall;
+	UBYTE	Protocol,
+		UUCPA,
+		LineLength,
+		Flags; 	/* BIT 0 = NEW USER		*/
+			/*     1 = MAIL SCAN		*/
+			/*     2 = MAIL SCAN ASK	*/
+			/*     3 = FILE SCAN		*/
+			/*     4 = FILE SCAN ASK	*/
+			/*     5 = LINE MSG EDITOR	*/
+			/*     6 = DELETED!		*/
+	};

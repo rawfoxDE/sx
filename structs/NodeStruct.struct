@@ -1,0 +1,7 @@
+struct NodeStruct
+{
+	char systempass[16];
+	char newuserpass[16];
+	char fcheck[42];
+	long flags;
+};

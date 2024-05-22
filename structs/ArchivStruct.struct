@@ -1,0 +1,15 @@
+struct ArchiveStruct
+{
+	char name[24];
+	char patt[24];
+	char testcmd[72];
+	char unpackcmd[72];
+	char packcmd[72];
+	char viewcmd[72];
+	char corrupt1[16];
+	char corrupt2[16];
+	char corrupt3[16];
+	UBYTE flags;
+	UBYTE viewaccess;
+	char reserve[30];
+};
